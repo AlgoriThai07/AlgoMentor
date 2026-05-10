@@ -99,7 +99,7 @@ AlgoMentor explains that the code compares each element with itself when ```i ==
 
 - **Frontend:** Next.js / React
 - **Styling:** Tailwind CSS
-- **AI:** Gemini or OpenAI API
+- **AI:** Gemini 2.5 Flash API
 - **Deployment:** Vercel
 - **Database:** None for MVP
 
