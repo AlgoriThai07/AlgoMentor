@@ -8,6 +8,7 @@ import {
   Lightbulb,
   Gauge,
   ArrowRight,
+  Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -30,6 +31,64 @@ interface ResponseSectionProps {
   title: string;
   content: string;
   variant?: "success" | "warning" | "info" | "default";
+  allowCodeBlock?: boolean;
+}
+
+function looksLikeCode(content: string) {
+  const codeSignals = [
+    "function ",
+    "class ",
+    "const ",
+    "let ",
+    "var ",
+    "def ",
+    "public ",
+    "private ",
+    "return ",
+    "while ",
+    "for ",
+    "if ",
+    "else",
+    "{",
+    "}",
+    ";",
+  ];
+
+  return codeSignals.some((signal) => content.includes(signal));
+}
+
+function splitIntroAndCode(content: string) {
+  const lines = content.split("\n");
+
+  const firstCodeLineIndex = lines.findIndex((line) => {
+    const trimmed = line.trim();
+
+    return (
+      trimmed.startsWith("function ") ||
+      trimmed.startsWith("class ") ||
+      trimmed.startsWith("const ") ||
+      trimmed.startsWith("let ") ||
+      trimmed.startsWith("var ") ||
+      trimmed.startsWith("def ") ||
+      trimmed.startsWith("public ") ||
+      trimmed.startsWith("private ") ||
+      trimmed.startsWith("while ") ||
+      trimmed.startsWith("for ") ||
+      trimmed.startsWith("if ")
+    );
+  });
+
+  if (firstCodeLineIndex === -1) {
+    return {
+      intro: "",
+      code: content,
+    };
+  }
+
+  return {
+    intro: lines.slice(0, firstCodeLineIndex).join("\n").trim(),
+    code: lines.slice(firstCodeLineIndex).join("\n").trim(),
+  };
 }
 
 function ResponseSection({
@@ -37,7 +96,13 @@ function ResponseSection({
   title,
   content,
   variant = "default",
+  allowCodeBlock = false,
 }: ResponseSectionProps) {
+  const shouldRenderCode = allowCodeBlock && looksLikeCode(content);
+  const { intro, code } = shouldRenderCode
+    ? splitIntroAndCode(content)
+    : { intro: "", code: "" };
+
   return (
     <div className="space-y-2">
       <div
@@ -49,10 +114,34 @@ function ResponseSection({
         )}
       >
         {icon}
-        <span>{title}</span>
+        <span>{shouldRenderCode ? "Solution" : title}</span>
       </div>
-      <div className="text-sm leading-relaxed text-muted-foreground pl-7 prose prose-sm prose-invert max-w-none prose-p:my-1 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-foreground prose-code:before:content-none prose-code:after:content-none prose-strong:text-foreground">
-        <ReactMarkdown>{content}</ReactMarkdown>
+
+      <div className="pl-7">
+        {shouldRenderCode ? (
+          <div className="space-y-3">
+            {intro && (
+              <div className="text-sm leading-relaxed text-muted-foreground prose prose-sm prose-invert max-w-none prose-p:my-1 prose-strong:text-foreground">
+                <ReactMarkdown>{intro}</ReactMarkdown>
+              </div>
+            )}
+
+            <div className="overflow-hidden rounded-xl border border-border bg-muted/40">
+              <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground">
+                <Code2 className="h-4 w-4" />
+                Corrected code
+              </div>
+
+              <pre className="max-h-[520px] overflow-y-auto whitespace-pre-wrap break-all p-4 text-sm leading-6 text-foreground">
+                <code>{code}</code>
+              </pre>
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm leading-relaxed text-muted-foreground prose prose-sm prose-invert max-w-none prose-p:my-1 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-foreground prose-code:before:content-none prose-code:after:content-none prose-strong:text-foreground">
+            <ReactMarkdown>{content}</ReactMarkdown>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -119,6 +208,7 @@ export function ResponsePanel({ response, isLoading }: ResponsePanelProps) {
       <h2 className="text-lg font-semibold mb-6 text-foreground">
         Feedback from your TA
       </h2>
+
       <div className="space-y-5">
         <ResponseSection
           icon={<CheckCircle2 className="h-5 w-5" />}
@@ -126,27 +216,36 @@ export function ResponsePanel({ response, isLoading }: ResponsePanelProps) {
           content={response.whatYouDidWell}
           variant="success"
         />
+
         <Separator className="bg-border" />
+
         <ResponseSection
           icon={<AlertCircle className="h-5 w-5" />}
           title="Main issue"
           content={response.mainIssue}
           variant="warning"
         />
+
         <Separator className="bg-border" />
+
         <ResponseSection
           icon={<Lightbulb className="h-5 w-5" />}
           title="Guiding hint"
           content={response.guidingHint}
+          allowCodeBlock
         />
+
         <Separator className="bg-border" />
+
         <ResponseSection
           icon={<Gauge className="h-5 w-5" />}
           title="Big-O explanation"
           content={response.bigOExplanation}
           variant="info"
         />
+
         <Separator className="bg-border" />
+
         <ResponseSection
           icon={<ArrowRight className="h-5 w-5" />}
           title="Next step"
