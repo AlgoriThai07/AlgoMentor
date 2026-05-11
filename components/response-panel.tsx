@@ -36,7 +36,6 @@ interface ResponseSectionProps {
 
 function looksLikeCode(content: string) {
   const codeSignals = [
-    "function ",
     "class ",
     "const ",
     "let ",
@@ -44,7 +43,6 @@ function looksLikeCode(content: string) {
     "def ",
     "public ",
     "private ",
-    "return ",
     "while ",
     "elif ",
     "{",
