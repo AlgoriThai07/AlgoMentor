@@ -48,6 +48,7 @@ function looksLikeCode(content: string) {
     "while ",
     "for ",
     "if ",
+    "elif ",
     "else",
     "{",
     "}",
@@ -55,6 +56,22 @@ function looksLikeCode(content: string) {
   ];
 
   return codeSignals.some((signal) => content.includes(signal));
+}
+
+function formatCodeLikeText(content: string) {
+  return content
+    .replace(/(Here is[^:]*:)\s*/i, "$1\n\n")
+    .replace(/(def\s+\w+\([^)]*\):)\s*/g, "$1\n    ")
+    .replace(/(function\s+\w+\([^)]*\)\s*\{)\s*/g, "$1\n  ")
+    .replace(/\s{2,}(while\s+)/g, "\n    $1")
+    .replace(/\s{2,}(for\s+)/g, "\n    $1")
+    .replace(/\s{2,}(if\s+)/g, "\n        $1")
+    .replace(/\s{2,}(elif\s+)/g, "\n        $1")
+    .replace(/\s{2,}(else:)/g, "\n        $1")
+    .replace(/\s{2,}(return\s+)/g, "\n    $1")
+    .replace(/\s{2,}(left\b)/g, "\n    $1")
+    .replace(/\s{2,}(right\b)/g, "\n    $1")
+    .replace(/\s{2,}(mid\b)/g, "\n        $1");
 }
 
 function splitIntroAndCode(content: string) {
@@ -99,8 +116,13 @@ function ResponseSection({
   allowCodeBlock = false,
 }: ResponseSectionProps) {
   const shouldRenderCode = allowCodeBlock && looksLikeCode(content);
+
+  const formattedContent = shouldRenderCode
+    ? formatCodeLikeText(content)
+    : content;
+
   const { intro, code } = shouldRenderCode
-    ? splitIntroAndCode(content)
+    ? splitIntroAndCode(formattedContent)
     : { intro: "", code: "" };
 
   return (
@@ -132,7 +154,7 @@ function ResponseSection({
                 Corrected code
               </div>
 
-              <pre className="max-h-[520px] overflow-x-auto whitespace-pre p-4 text-sm leading-6 text-foreground">
+              <pre className="max-h-[520px] overflow-y-auto whitespace-pre-wrap break-words p-4 text-sm leading-6 text-foreground">
                 <code>{code}</code>
               </pre>
             </div>

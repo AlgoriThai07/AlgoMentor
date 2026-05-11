@@ -36,18 +36,24 @@ const tutorResponseSchema = {
   properties: {
     whatYouDidWell: {
       type: "STRING",
+      description: "One short positive observation about the student's attempt.",
     },
     mainIssue: {
       type: "STRING",
+      description: "One short explanation of the main issue.",
     },
     guidingHint: {
       type: "STRING",
+      description:
+        "A hint, or if the student asked for the final solution, the complete corrected code. If code is included, it must contain real newline characters and indentation, not one-line code.",
     },
     bigOExplanation: {
       type: "STRING",
+      description: "One short Big-O explanation.",
     },
     nextStep: {
       type: "STRING",
+      description: "One short next action.",
     },
   },
   required: [
@@ -161,6 +167,8 @@ Return a much shorter answer.
 Do not provide a full trace.
 Do not include long walkthroughs.
 Keep guidingHint under 500 characters unless it contains final corrected code.
+If guidingHint contains code, it must use real newline characters and indentation.
+Never put code on one line.
 Keep all other fields under 1 short sentence.
 Respond only with valid JSON.`
     : systemPrompt;
@@ -170,8 +178,6 @@ Respond only with valid JSON.`
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-
-        // Do not put the key in the URL because URLs can be logged.
         "x-goog-api-key": geminiKey,
       },
       cache: "no-store",
@@ -216,9 +222,7 @@ Respond only with valid JSON.`
     const textContent = candidate?.content?.parts?.[0]?.text;
 
     if (finishReason === "MAX_TOKENS") {
-      console.error("Gemini hit MAX_TOKENS:", {
-        textContent,
-      });
+      console.error("Gemini hit MAX_TOKENS:", { textContent });
       return null;
     }
 
@@ -297,6 +301,15 @@ The UI only has a hint area, so final code must go in "guidingHint".
 If the student does not clearly ask for the final solution, do not give the full final code.
 Instead, use "guidingHint" for one helpful hint or guiding question.
 
+Critical code formatting rule:
+If you provide final code inside guidingHint:
+1. Start with one short sentence.
+2. Then add a blank line.
+3. Then write the corrected code with real newline characters and indentation.
+4. Never put the entire code on one line.
+5. Do not use markdown code fences.
+6. Do not use inline markdown for the code.
+
 Style rules:
 1. Keep whatYouDidWell under 1 short sentence.
 2. Keep mainIssue under 1 short sentence.
@@ -304,11 +317,9 @@ Style rules:
 4. Keep nextStep under 1 short sentence.
 5. Keep guidingHint under 900 characters unless it contains final corrected code.
 6. If the mode is trace, do not trace the entire input. Show only the first 2-3 key iterations and summarize the pattern.
-7. If guidingHint contains final code, include only one short intro sentence plus the corrected code.
-8. Do not use markdown code fences.
-9. Do not write long walkthroughs.
-10. Do not include extra fields.
-11. Respond only with valid JSON.
+7. Do not write long walkthroughs.
+8. Do not include extra fields.
+9. Respond only with valid JSON.
 
 MODE-SPECIFIC FOCUS:
 ${modeInstructions[mode]}
@@ -317,7 +328,7 @@ Return exactly this JSON shape:
 {
   "whatYouDidWell": "One short positive observation.",
   "mainIssue": "One short explanation of the main issue.",
-  "guidingHint": "A hint, or if the student asked for the final solution, the complete corrected code.",
+  "guidingHint": "A hint, or if the student asked for the final solution, one short intro sentence, then a blank line, then the complete corrected code with real newlines and indentation.",
   "bigOExplanation": "One short Big O explanation.",
   "nextStep": "One short next action."
 }`;
