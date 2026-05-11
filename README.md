@@ -172,6 +172,6 @@ The goal is to make AI feel less like an answer machine and more like a patient 
 
 ## Live Demo
 
-Project link: `[Add your deployed project link here]`
+Project link: `https://v0-dsa-office-hours-app.vercel.app/`
 
-Loom demo: `[Add your Loom video link here]`
+Loom demo: `https://www.loom.com/share/b34d236f6bdb4825a3041cd4a82e88b8`
