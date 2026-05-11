@@ -132,7 +132,7 @@ function ResponseSection({
                 Corrected code
               </div>
 
-              <pre className="max-h-[520px] overflow-y-auto whitespace-pre-wrap break-all p-4 text-sm leading-6 text-foreground">
+              <pre className="max-h-[520px] overflow-x-auto whitespace-pre p-4 text-sm leading-6 text-foreground">
                 <code>{code}</code>
               </pre>
             </div>
