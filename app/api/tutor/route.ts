@@ -3,8 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-
 type TutoringMode = "debug" | "bigO" | "hint" | "trace";
 
 interface TutorRequest {
@@ -24,13 +22,13 @@ interface TutorResponse {
 
 const modeInstructions: Record<TutoringMode, string> = {
   debug:
-    "Focus on helping the student find bugs in their code. If the student is only asking for help, guide them with questions and hints. If the student explicitly asks for the final solution or corrected code, provide it in the guidingHint field.",
+    "Focus on helping the student find bugs in their code. If they only ask for help, guide them with questions and hints. If they explicitly ask for the final solution or corrected code, provide it in the guidingHint field.",
   bigO:
-    "Focus on analyzing the time and space complexity. If the student asks for a solution, explain the optimized solution and put the final code in the guidingHint field.",
+    "Focus on analyzing time and space complexity. If the student asks for a solution, explain the optimized approach and put the final code in the guidingHint field.",
   hint:
     "Provide a gentle hint to help them get unstuck. If the student explicitly asks for the final solution or corrected code, provide it in the guidingHint field instead of only giving a hint.",
   trace:
-    "Help them trace through their code step by step. If the student explicitly asks for the final solution or corrected code, provide it in the guidingHint field after explaining the trace issue.",
+    "Help them trace the code, but do not produce a full trace for long inputs. Show only the first 2-3 important iterations, then summarize the pattern. If the student asks for final code, provide it in the guidingHint field instead.",
 };
 
 const tutorResponseSchema = {
@@ -38,18 +36,24 @@ const tutorResponseSchema = {
   properties: {
     whatYouDidWell: {
       type: "STRING",
+      description: "One short positive observation about the student's attempt.",
     },
     mainIssue: {
       type: "STRING",
+      description: "One short explanation of the main issue.",
     },
     guidingHint: {
       type: "STRING",
+      description:
+        "A hint, or if the student asked for the final solution, the complete corrected code. If code is included, it must contain real newline characters and indentation, not one-line code.",
     },
     bigOExplanation: {
       type: "STRING",
+      description: "One short Big-O explanation.",
     },
     nextStep: {
       type: "STRING",
+      description: "One short next action.",
     },
   },
   required: [
@@ -70,52 +74,45 @@ const tutorResponseSchema = {
 
 const fallbackResponses: Record<TutoringMode, TutorResponse> = {
   debug: {
-    whatYouDidWell:
-      "You're taking a structured approach to the problem with clear variable names and logical flow.",
+    whatYouDidWell: "You're taking a structured approach with clear logic.",
     mainIssue:
-      "There's likely an edge case or condition check that's not quite right. Look at what happens when your loop reaches the end or when comparing values.",
+      "There may be an edge case or condition that is not handled correctly.",
     guidingHint:
-      "What happens at the boundary conditions? What should the function return in the happy path versus when an edge case occurs?",
+      "Trace your code with a small input and check how each variable changes after every loop iteration.",
     bigOExplanation:
-      "Your solution appears to have reasonable complexity. Consider whether you're doing any unnecessary work in nested loops or repeated operations.",
+      "Your current complexity depends on how many times your loops or recursive calls repeat.",
     nextStep:
-      "Trace through your code with a simple test case. Write down the value of each variable at every step and check if the logic holds.",
+      "Test your code with boundary cases such as empty input, one element, and values at the edges.",
   },
   bigO: {
-    whatYouDidWell:
-      "Your approach shows you understand the problem structure and are thinking about iteration and comparisons.",
+    whatYouDidWell: "You are thinking about the structure of the algorithm.",
     mainIssue:
-      "The current solution may have a higher time complexity than necessary. Look for repeated work that could be optimized with a different data structure.",
+      "There may be repeated work that can be reduced with a better data structure or strategy.",
     guidingHint:
-      "What information do you need to find quickly? Is there a data structure that would let you look something up in constant time?",
+      "Ask yourself what information you repeatedly search for and whether it can be stored for faster lookup.",
     bigOExplanation:
-      "Your current approach may be O(n²) or worse if it repeats work inside nested loops. An optimized solution often uses a hash map, set, or two-pointer strategy.",
+      "If your code has nested loops, it may be O(n²); using a set, map, or two pointers may reduce it.",
     nextStep:
-      "Try identifying which repeated operation is slowing the algorithm down, then choose a data structure that removes that repeated work.",
+      "Identify the repeated operation and try replacing it with a more efficient lookup or pointer movement.",
   },
   hint: {
     whatYouDidWell:
-      "You've made a solid attempt and are on the right track with your overall approach.",
-    mainIssue:
-      "Something in your logic is not handling all cases correctly. It might be an off-by-one error, incorrect operator, or missing condition.",
+      "You've made a reasonable attempt and have the right general direction.",
+    mainIssue: "One part of the logic may not handle all cases correctly.",
     guidingHint:
-      "What are the different cases your code needs to handle? Are you checking all of them?",
-    bigOExplanation:
-      "Think about whether your solution performs any unnecessary repeated work that could be optimized.",
-    nextStep:
-      "Test your code with a few different inputs, including edge cases such as empty input, one element, or values at the boundaries.",
+      "List the different cases your code must handle, then check whether your conditions cover each one.",
+    bigOExplanation: "Check whether your code repeats work that could be avoided.",
+    nextStep: "Run your code on a simple normal case and one edge case.",
   },
   trace: {
-    whatYouDidWell:
-      "Your code structure is clear and you're using appropriate control flow statements.",
-    mainIssue:
-      "The execution might not be going where you expect. The values of your variables may change differently from what you intended.",
+    whatYouDidWell: "Your code has a clear structure to trace.",
+    mainIssue: "The variable values may not be changing the way you expect.",
     guidingHint:
-      "Step through your code with a small input. What is the value of each variable after every line?",
+      "Pick a tiny input and write down only the first few important variable changes instead of tracing the entire input.",
     bigOExplanation:
-      "Tracing does not change the complexity, but it helps reveal whether the algorithm is doing repeated or unnecessary work.",
+      "Tracing helps reveal repeated work, but it does not change the algorithm's complexity.",
     nextStep:
-      "Create a small example and manually write down the value of each important variable after each loop iteration or function call.",
+      "Create a small table with columns for each important variable and fill in the first few iterations.",
   },
 };
 
@@ -140,76 +137,41 @@ function cleanJsonContent(content: string): string {
     .trim();
 }
 
-async function callOpenAI(
-  systemPrompt: string,
-  userPrompt: string
-): Promise<TutorResponse | null> {
-  const openaiKey = process.env.OPENAI_API_KEY;
+function truncateText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
 
-  if (!openaiKey) {
-    console.log("OPENAI_API_KEY not set, skipping OpenAI fallback");
-    return null;
-  }
-
-  try {
-    const response = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.2,
-        max_tokens: 1400,
-        response_format: {
-          type: "json_object",
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI API error:", errorText);
-      return null;
-    }
-
-    const data = await response.json();
-    const textContent = data.choices?.[0]?.message?.content;
-
-    if (!textContent) {
-      console.error("OpenAI returned no text content:", data);
-      return null;
-    }
-
-    const parsed = JSON.parse(cleanJsonContent(textContent));
-
-    if (!isValidTutorResponse(parsed)) {
-      console.error("OpenAI response has invalid shape:", parsed);
-      return null;
-    }
-
-    return parsed;
-  } catch (error) {
-    console.error("OpenAI fallback error:", error);
-    return null;
-  }
+  return (
+    text.slice(0, maxChars) +
+    "\n\n[Truncated because the input was too long.]"
+  );
 }
 
 async function callGemini(
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  compact = false
 ): Promise<TutorResponse | null> {
   const geminiKey = process.env.GEMINI_API_KEY;
 
   if (!geminiKey) {
-    console.log("GEMINI_API_KEY not set, skipping Gemini");
+    console.log("GEMINI_API_KEY is not set.");
     return null;
   }
+
+  const finalSystemPrompt = compact
+    ? `${systemPrompt}
+
+CRITICAL COMPACT RETRY:
+Your previous response was too long and hit MAX_TOKENS.
+Return a much shorter answer.
+Do not provide a full trace.
+Do not include long walkthroughs.
+Keep guidingHint under 500 characters unless it contains final corrected code.
+If guidingHint contains code, it must use real newline characters and indentation.
+Never put code on one line.
+Keep all other fields under 1 short sentence.
+Respond only with valid JSON.`
+    : systemPrompt;
 
   try {
     const response = await fetch(GEMINI_API_URL, {
@@ -223,7 +185,7 @@ async function callGemini(
         systemInstruction: {
           parts: [
             {
-              text: systemPrompt,
+              text: finalSystemPrompt,
             },
           ],
         },
@@ -238,9 +200,9 @@ async function callGemini(
           },
         ],
         generationConfig: {
-          temperature: 0.2,
+          temperature: 0.1,
           topP: 0.8,
-          maxOutputTokens: 1400,
+          maxOutputTokens: compact ? 2048 : 4096,
           responseMimeType: "application/json",
           responseSchema: tutorResponseSchema,
         },
@@ -258,6 +220,11 @@ async function callGemini(
     const candidate = data.candidates?.[0];
     const finishReason = candidate?.finishReason;
     const textContent = candidate?.content?.parts?.[0]?.text;
+
+    if (finishReason === "MAX_TOKENS") {
+      console.error("Gemini hit MAX_TOKENS:", { textContent });
+      return null;
+    }
 
     if (finishReason && finishReason !== "STOP") {
       console.error("Gemini did not finish normally:", {
@@ -288,11 +255,10 @@ async function callGemini(
 
 export async function POST(request: NextRequest) {
   const geminiKey = process.env.GEMINI_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
 
-  if (!geminiKey && !openaiKey) {
+  if (!geminiKey) {
     return NextResponse.json(
-      { error: "No API key configured. Set GEMINI_API_KEY or OPENAI_API_KEY." },
+      { error: "No API key configured. Set GEMINI_API_KEY." },
       { status: 500 }
     );
   }
@@ -317,70 +283,74 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = `You are a Data Structures and Algorithms teaching assistant.
 
-Your goal is to help students learn, not simply give them the final answer.
-
-The student may ask for different levels of help. You must decide from the student's question whether they want:
+The student may ask for:
 1. a hint,
 2. debugging guidance,
 3. a trace,
 4. Big O analysis,
 5. or the final corrected solution.
 
+You must decide from the student's question whether they want guidance or the final solution.
+
 Important solution rule:
-If the student explicitly asks for the final solution, final answer, full code, corrected code, fixed code, or asks you to solve it directly, you MAY provide the complete corrected code.
+If the student explicitly asks for the final solution, final answer, full code, corrected code, fixed code, or asks you to solve it directly, you may provide the complete corrected code.
 When you provide complete corrected code, put it inside the "guidingHint" field.
 Do not create a separate "finalCode" field.
 The UI only has a hint area, so final code must go in "guidingHint".
 
 If the student does not clearly ask for the final solution, do not give the full final code.
-Instead, use "guidingHint" for a helpful hint, guiding question, or next debugging clue.
+Instead, use "guidingHint" for one helpful hint or guiding question.
 
-When responding:
-1. Identify what the student is trying to do.
-2. Mention one thing they did correctly.
-3. Explain the main issue in simple beginner-friendly language.
-4. Use "guidingHint" either for a hint or, only when appropriate, for the final corrected code.
-5. Explain time and space complexity when relevant.
-6. Focus on reasoning, debugging, and learning.
-7. Keep the response concise and structured.
-8. Do not use markdown code fences.
-9. Avoid backticks unless they are part of code.
-10. Keep each field under 2 sentences unless the "guidingHint" field contains final code.
+Critical code formatting rule:
+If you provide final code inside guidingHint:
+1. Start with one short sentence.
+2. Then add a blank line.
+3. Then write the corrected code with real newline characters and indentation.
+4. Never put the entire code on one line.
+5. Do not use markdown code fences.
+6. Do not use inline markdown for the code.
+
+Style rules:
+1. Keep whatYouDidWell under 1 short sentence.
+2. Keep mainIssue under 1 short sentence.
+3. Keep bigOExplanation under 1 short sentence.
+4. Keep nextStep under 1 short sentence.
+5. Keep guidingHint under 900 characters unless it contains final corrected code.
+6. If the mode is trace, do not trace the entire input. Show only the first 2-3 key iterations and summarize the pattern.
+7. Do not write long walkthroughs.
+8. Do not include extra fields.
+9. Respond only with valid JSON.
 
 MODE-SPECIFIC FOCUS:
 ${modeInstructions[mode]}
 
-You must respond with a JSON object containing exactly these 5 fields:
+Return exactly this JSON shape:
 {
-  "whatYouDidWell": "Specific positive feedback about their approach, code structure, or thinking",
-  "mainIssue": "The primary issue or area for improvement, explained in beginner-friendly language",
-  "guidingHint": "A hint or guiding question. If and only if the student asked for the final solution, put the complete corrected code here.",
-  "bigOExplanation": "Analysis of time and space complexity of their current approach or the corrected approach",
-  "nextStep": "A specific, actionable next step they should take"
-}
-
-Respond ONLY with the JSON object.`;
+  "whatYouDidWell": "One short positive observation.",
+  "mainIssue": "One short explanation of the main issue.",
+  "guidingHint": "A hint, or if the student asked for the final solution, one short intro sentence, then a blank line, then the complete corrected code with real newlines and indentation.",
+  "bigOExplanation": "One short Big O explanation.",
+  "nextStep": "One short next action."
+}`;
 
     const userPrompt = `Problem Statement:
-${problemStatement || "Not provided"}
+${truncateText(problemStatement || "Not provided", 3000)}
 
 Student's Code:
-${code}
+${truncateText(code, 6000)}
 
 Student's Question:
-${question}`;
+${truncateText(question, 1000)}`;
 
-    let tutorResponse: TutorResponse | null = null;
-
-    tutorResponse = await callGemini(systemPrompt, userPrompt);
+    let tutorResponse = await callGemini(systemPrompt, userPrompt);
 
     if (!tutorResponse) {
-      console.log("Trying OpenAI fallback...");
-      tutorResponse = await callOpenAI(systemPrompt, userPrompt);
+      console.log("Gemini failed once, retrying with compact prompt...");
+      tutorResponse = await callGemini(systemPrompt, userPrompt, true);
     }
 
     if (!tutorResponse) {
-      console.log("Both APIs failed, using static fallback response");
+      console.log("Gemini failed, using static fallback response.");
       return NextResponse.json(fallbackResponses[mode]);
     }
 
